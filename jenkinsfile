@@ -1,0 +1,59 @@
+pipeline {
+  agent any
+  environment {
+    registry = ""
+    registryCredential = 'dockerhub_id'
+    dockerImage = ''
+    IMAGE_REPO_NAME="jenkins-assignment"
+    IMAGE_TAG="v1"
+  }
+  stages {
+    stage('Cloning Git') {
+      steps {
+        script {
+          checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/saurabh-sigmoid/Jenkins.git']]])
+
+          }    
+        }
+      }
+  
+    stage('Building Image') {
+      steps{
+        script {
+          dockerImage = docker.build "saurabhsag/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+        }
+      }
+    }
+       stage('Push image') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub_id', passwordVariable: 'docker_password', usernameVariable: 'docker_username')]) {
+            sh 'docker login -u saurabhsag -p ${docker_password}'
+            sh "docker push saurabhsag/jenkins-assignment:v1"
+}
+            
+        }
+      }
+    }
+      stage('Deploying') {
+      steps {
+            withCredentials([kubeconfigFile(credentialsId: 'kube', variable: 'KUBECRED')]) {
+                    sh 'cat $KUBECRED > ~/.kube/config'
+                    echo "Deploying to cluster"
+                    sh 'docker pull saurabhsag/jenkins-assignment:v1'
+                    sh '/usr/local/bin/kubectl create -f python-deployment.yaml'
+        
+        
+        }
+    
+    }
+}
+
+  }
+  post {
+        always {
+            emailext body: '''$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS:
+Check console output at $BUILD_URL to view the results.''', subject: '$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS!', to: 'saurabhrs@sigmoidanalytics.com'
+        }
+    }
+}
